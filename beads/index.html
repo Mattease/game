@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>创意拼豆设计工坊 旗舰漫游版</title>
+<style>
+  :root {
+    --slot-size: 13px; /* 动态控制的像素豆子尺寸基准 */
+    --pan-x: 0px;      /* 空间漫游平移横坐标 */
+    --pan-y: 0px;      /* 空间漫游平移纵坐标 */
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #edf1f4; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 16px; user-select: none; }
+
+  .wrapper { max-width: 1250px; width: 100%; display: flex; flex-direction: column; gap: 14px; }
+
+  /* 顶控制面板 */
+  .header { display: flex; align-items: center; justify-content: space-between; background: #fff; padding: 14px 20px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.04); width: 100%; flex-wrap: wrap; gap: 12px; }
+  .title-group h1 { font-size: 18px; font-weight: 700; color: #2c3e50; }
+  .title-group p { font-size: 11px; color: #95a5a6; margin-top: 2px; }
+
+  .controls-hub { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .btn { border: none; padding: 8px 14px; font-size: 13px; font-weight: 600; border-radius: 8px; cursor: pointer; transition: all 0.1s ease; background: #fff; color: #2c3e50; border: 1.5px solid #dcdde1; display: flex; align-items: center; gap: 6px; }
+  .btn:active { transform: scale(0.95); }
+  .btn.active { background: #29b6f6; color: #fff; border-color: #29b6f6; box-shadow: 0 4px 10px rgba(41, 182, 246, 0.25); }
+  .size-select { padding: 7px 10px; border-radius: 8px; border: 1.5px solid #dcdde1; font-size: 13px; font-weight: 600; color: #2c3e50; outline: none; background: #fff; }
+
+  .zoom-divider { width: 1px; height: 20px; background: #dcdde1; margin: 0 4px; }
+
+  /* 主体双栏布局 */
+  .main-layout { display: grid; grid-template-columns: 1fr 340px; gap: 16px; width: 100%; }
+  @media (max-width: 960px) { .main-layout { grid-template-columns: 1fr; } }
+
+  .left-column { display: flex; flex-direction: column; gap: 14px; width: 100%; }
+
+  /* 核心重构：绝对固定大视口，切断原生滚动条干扰 */
+  .canvas-scroll-zone { width: 100%; height: 60vh; background: #dbdee3; border-radius: 16px; box-shadow: inset 0 2px 10px rgba(0,0,0,0.08); overflow: hidden; position: relative; }
+  .pan-viewport { width: 100%; height: 100%; position: relative; }
+  
+  /* 核心重构：高阶双重绝对对齐矩阵，确保缩放永不跑偏，且支持物理漫游位移 */
+  .pegboard-container {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(calc(-50% + var(--pan-x)), calc(-50% + var(--pan-y)));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    will-change: transform;
+  }
+  
+  /* 空间漫游状态机指针状态控制 */
+  .canvas-scroll-zone.space-held { cursor: grab !important; }
+  .canvas-scroll-zone.space-panning { cursor: grabbing !important; }
+  .canvas-scroll-zone.space-held .slot { pointer-events: none; } /* 漫游状态下暂时锁死画笔拦截事件 */
+
+  /* 紧凑像素网格图纸 */
+  .pegboard { display: grid; background: #ffffff; padding: 1px; border: 2px solid #bdc3c7; box-shadow: 0 6px 20px rgba(0,0,0,0.06); }
+
+  /* 随 CSS 变量精确无损重绘的插槽 */
+  .slot { position: relative; width: var(--slot-size); height: var(--slot-size); background: #ffffff; border-right: 1px solid #eef0f2; border-bottom: 1px solid #eef0f2; cursor: crosshair; }
+  .slot::after { content: ''; position: absolute; top: 50%; left: 50%; width: 2px; height: 2px; background: #e0e4e8; border-radius: 50%; transform: translate(-50%, -50%); }
+
+  /* 经热熨烫无缝融化的像素豆 */
+  .bead { 
+    width: 100%; 
+    height: 100%; 
+    border-radius: 2px; 
+    position: absolute; 
+    top: 0; 
+    left: 0; 
+    z-index: 2; 
+    box-shadow: inset 1px 1px 1px rgba(255,255,255,0.15), inset -1px -1px 1px rgba(0,0,0,0.2); 
+    animation: fuseBead 0.08s ease-out forwards; 
+  }
+
+  /* 下方控制台 */
+  .console-panel { display: grid; grid-template-columns: 1fr 240px; gap: 14px; }
+  @media (max-width: 600px) { .console-panel { grid-template-columns: 1fr; } }
+  .palette-card { background: #fff; padding: 14px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.03); display: flex; flex-direction: column; gap: 10px; }
+  .panel-title { font-size: 13px; font-weight: 700; color: #34495e; }
+  .color-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 5px; }
+  .color-swatch { aspect-ratio: 1; border-radius: 4px; cursor: pointer; box-shadow: inset 0 1px 2px rgba(255,255,255,0.2), 0 1px 2px rgba(0,0,0,0.06); }
+  .color-swatch.selected { transform: scale(1.15); box-shadow: 0 4px 10px rgba(0,0,0,0.15), inset 0 0 0 2px #fff; z-index: 5; }
+
+  .picker-card { background: #fff; padding: 14px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.03); display: flex; flex-direction: column; gap: 8px; justify-content: center; }
+  .picker-engine { display: flex; align-items: center; gap: 8px; background: #f8fafc; padding: 8px; border-radius: 10px; border: 1.5px dashed #e2e8f0; }
+  .native-color-input { width: 38px; height: 38px; border: none; cursor: pointer; background: none; flex-shrink: 0; }
+  .code-input-box { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .code-input-box label { font-size: 10px; font-weight: 600; color: #94a3b8; }
+  .hex-field { width: 100%; padding: 4px 8px; border: 1.5px solid #cbd5e1; border-radius: 6px; font-family: monospace; font-size: 13px; font-weight: 600; text-transform: uppercase; outline: none; }
+
+  /* 右栏排行榜集市 */
+  .gallery-column { background: #fff; border-radius: 16px; padding: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.04); display: flex; flex-direction: column; gap: 12px; height: 74vh; }
+  .gallery-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; }
+  
+  .gallery-item { display: flex; align-items: center; background: #f8fafc; padding: 10px; border-radius: 12px; border: 1px solid #e2e8f0; gap: 12px; position: relative; }
+  .rank-badge { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; border-radius: 50%; background: #e2e8f0; color: #64748b; }
+  .gallery-item:nth-child(1) .rank-badge { background: #ffdf00; color: #7a5f00; }
+  .gallery-item:nth-child(2) .rank-badge { background: #c0c0c0; color: #4a4a4a; }
+  .gallery-item:nth-child(3) .rank-badge { background: #cd7f32; color: #5e3a12; }
+  
+  /* 纯净裁剪像素缩略图 */
+  .item-thumb { width: 60px; height: 60px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; object-fit: contain; image-rendering: pixelated; cursor: zoom-in; transition: transform 0.15s; }
+  .item-thumb:hover { transform: scale(1.05); }
+  
+  .item-info { flex: 1; min-width: 0; }
+  .item-name { font-size: 13px; font-weight: 700; color: #334155; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-time { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+  
+  .like-zone { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .like-btn { background: #fff; border: 1px solid #e2e8f0; width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; box-shadow: 0 2px 5px rgba(0,0,0,0.03); }
+  .like-btn:active { transform: scale(0.85); background: #edf8ff; }
+  .like-count { font-size: 11px; font-weight: 700; color: #64748b; }
+
+  /* 遮罩弹窗 */
+  .overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(44, 62, 80, 0.4); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 100; opacity: 0; pointer-events: none; transition: opacity 0.2s ease; padding: 20px; }
+  .overlay.show { opacity: 1; pointer-events: auto; }
+  .modal-card { background: #fff; border-radius: 20px; padding: 22px; max-width: 320px; width: 100%; text-align: center; box-shadow: 0 15px 40px rgba(0,0,0,0.12); }
+  
+  /* 高清像素大图展示灯箱 */
+  .lightbox-card { background: #fff; border-radius: 24px; padding: 24px; max-width: 500px; width: 100%; box-shadow: 0 25px 60px rgba(0,0,0,0.2); display: flex; flex-direction: column; align-items: center; gap: 16px; position: relative; }
+  .lightbox-img-frame { width: 100%; aspect-ratio: 1; background: #f8fafc; border: 1.5px dashed #cbd5e1; border-radius: 12px; display: flex; align-items: center; justify-content: center; padding: 16px; overflow: hidden; }
+  .lightbox-preview-img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
+</style>
+</head>
+<body>
+
+<div class="wrapper">
+  <div class="header">
+    <div class="title-group">
+      <h1>创意拼豆设计工坊</h1>
+      <p>按住空格键即可鼠标拖拽平移，支持 Alt 加滚轮进行无损缩放</p>
+    </div>
+    <div class="controls-hub">
+      <select class="size-select" id="sizeSelector" onchange="handleSizeChange()">
+        <option value="32">基础图纸: 32 x 32</option>
+        <option value="64" selected>核心图纸: 64 x 64</option>
+        <option value="80">极限图纸: 80 x 80</option>
+      </select>
+      
+      <button class="btn" onclick="adjustCanvasZoom(2)">➕ 放大</button>
+      <button class="btn" onclick="adjustCanvasZoom(-2)">➖ 缩小</button>
+      <div class="zoom-divider"></div>
+
+      <button class="btn active" id="tool-draw" onclick="setTool('draw')">✏️ 拼豆</button>
+      <button class="btn" id="tool-erase" onclick="setTool('erase')">🧼 镊子</button>
+      <button class="btn" style="color:#ff6b6b;" onclick="askClearBoard()">🧹 清空</button>
+      <button class="btn btn-primary" style="background:#29b6f6;color:#fff;border-color:#29b6f6;" onclick="triggerSaveAndCropWorkflow()">💾 保存作品</button>
+    </div>
+  </div>
+
+  <div class="main-layout">
+    <div class="left-column">
+      <div class="canvas-scroll-zone" id="canvasZone">
+        <div class="pan-viewport">
+          <div class="pegboard-container">
+            <div class="pegboard" id="pegboard"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="console-panel">
+        <div class="palette-card">
+          <div class="color-grid" id="colorGrid"></div>
+        </div>
+        <div class="picker-card">
+          <div class="picker-engine">
+            <input type="color" class="native-color-input" id="customColorPicker" value="#b31217" oninput="syncFromWheel(this.value)">
+            <div class="code-input-box">
+              <label>自定义色彩</label>
+              <input type="text" class="hex-field" id="hexCodeField" value="#B31217" maxlength="7" onchange="syncFromHexField(this.value)">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="gallery-column">
+      <div class="panel-title">🏆 拼豆创作风云榜（点击图片放大）</div>
+      <div class="gallery-list" id="galleryList"></div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="modalOverlay">
+  <div class="modal-card">
+    <div class="modal-title" id="modalTitle">提示</div>
+    <div class="modal-sub" id="modalSub">操作确认</div>
+    <div class="controls-hub" style="justify-content: center; gap: 10px; margin-top: 12px;">
+      <button class="btn" style="background:#29b6f6; color:#fff; border-color:#29b6f6;" id="modalConfirmBtn">确认</button>
+      <button class="btn" onclick="closeModal()">取消</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="lightboxOverlay" onclick="closeLightbox()">
+  <div class="lightbox-card" onclick="event.stopPropagation()">
+    <div class="panel-title" id="lightboxTitle" style="font-size:14px;">作品展示</div>
+    <div class="lightbox-img-frame">
+      <img class="lightbox-preview-img" id="lightboxImg" src="">
+    </div>
+    <button class="btn btn-primary" style="background:#29b6f6;color:#fff;border-color:#29b6f6;width:100%;justify-content:center;" onclick="closeLightbox()">关闭查看</button>
+  </div>
+</div>
+
+<script>
+let currentGridSize = 64;
+let activeColor = '#b31217'; 
+let activeTool = 'draw';     
+let isDrawing = false;       
+let savedDesigns = [];       
+let slotPixelSize = 13; 
+
+// 漫游平移状态核心引擎状态变量
+let panX = 0;
+let panY = 0;
+let isSpacePressed = false;
+let isPanning = false;
+let startX = 0;
+let startY = 0;
+
+const PRESET_COLORS = [
+  '#b31217', '#d32f2f', '#f44336', '#ff5252', '#ff7979', '#e67e22', '#ff9800', '#ffb74d', '#f1c40f', '#fff200', '#fff9c4', '#27ae60',
+  '#4caf50', '#81c784', '#16a085', '#009688', '#4db6ac', '#2980b9', '#2196f3', '#64b5f6', '#90caf9', '#8e44ad', '#9c27b0', '#ba68c8',
+  '#e84393', '#e91e63', '#ff4081', '#f8bbd0', '#795548', '#a88265', '#ebd2b0', '#ffffff', '#cbd5e1', '#64748b', '#334155', '#111111'
+];
+
+function initStudio() {
+  const gridHTML = document.getElementById('colorGrid');
+  gridHTML.innerHTML = PRESET_COLORS.map(color => `
+    <div class="color-swatch${color.toLowerCase() === activeColor.toLowerCase() ? ' selected' : ''}" 
+         style="background: ${color};" 
+         onclick="selectPresetColor('${color}')">
+    </div>
+  `).join('');
+
+  const board = document.getElementById('pegboard');
+  board.innerHTML = '';
+  board.style.gridTemplateColumns = `repeat(${currentGridSize}, 1fr)`;
+  board.style.gridTemplateRows = `repeat(${currentGridSize}, 1fr)`;
+  
+  for (let i = 0; i < currentGridSize * currentGridSize; i++) {
+    const slot = document.createElement('div');
+    slot.className = 'slot';
+    
+    slot.addEventListener('pointerdown', (e) => {
+      if (isSpacePressed) return; // 空间状态下避开画笔干扰
+      isDrawing = true;
+      slot.releasePointerCapture(e.pointerId); 
+      applyToolAction(slot);
+    });
+    slot.addEventListener('pointerenter', () => {
+      if (isDrawing && !isSpacePressed) applyToolAction(slot);
+    });
+    
+    board.appendChild(slot);
+  }
+  
+  setupShortcuts();
+  loadLeaderboard();
+}
+
+// 高灵敏漫游平移与滚轮控制核心模块
+function setupShortcuts() {
+  const zone = document.getElementById('canvasZone');
+
+  // 1. 空格漫游守卫监听
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && !isSpacePressed) {
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+      e.preventDefault();
+      isSpacePressed = true;
+      isDrawing = false; // 强行切断画笔流
+      zone.classList.add('space-held');
+    }
+  });
+
+  window.addEventListener('keyup', (e) => {
+    if (e.code === 'Space') {
+      isSpacePressed = false;
+      isPanning = false;
+      zone.classList.remove('space-held');
+      zone.classList.remove('space-panning');
+    }
+  });
+
+  // 2. 漫游物理拖拽引擎
+  zone.addEventListener('pointerdown', (e) => {
+    if (isSpacePressed) {
+      isPanning = true;
+      startX = e.clientX - panX;
+      startY = e.clientY - panY;
+      zone.classList.add('space-panning');
+      e.stopPropagation();
+    }
+  });
+
+  window.addEventListener('pointermove', (e) => {
+    if (isPanning && isSpacePressed) {
+      panX = e.clientX - startX;
+      panY = e.clientY - startY;
+      document.documentElement.style.setProperty('--pan-x', panX + 'px');
+      document.documentElement.style.setProperty('--pan-y', panY + 'px');
+    }
+  });
+
+  // 3. Alt 加滚轮无损变焦控制
+  zone.addEventListener('wheel', (e) => {
+    if (e.altKey) {
+      e.preventDefault();
+      if (e.deltaY < 0) {
+        adjustCanvasZoom(2);
+      } else {
+        adjustCanvasZoom(-2);
+      }
+    }
+  }, { passive: false });
+}
+
+function adjustCanvasZoom(amount) {
+  slotPixelSize = Math.max(8, Math.min(32, slotPixelSize + amount));
+  document.documentElement.style.setProperty('--slot-size', slotPixelSize + 'px');
+}
+
+function selectPresetColor(color) {
+  activeColor = color;
+  setTool('draw');
+  document.getElementById('customColorPicker').value = color;
+  document.getElementById('hexCodeField').value = color.toUpperCase();
+  refreshPaletteHighlight();
+}
+
+function syncFromWheel(color) {
+  activeColor = color;
+  setTool('draw');
+  document.getElementById('hexCodeField').value = color.toUpperCase();
+  refreshPaletteHighlight();
+}
+
+function syncFromHexField(color) {
+  if (!color.startsWith('#')) color = '#' + color;
+  if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(color)) {
+    activeColor = color;
+    setTool('draw');
+    document.getElementById('customColorPicker').value = color;
+    refreshPaletteHighlight();
+  }
+}
+
+function refreshPaletteHighlight() {
+  document.querySelectorAll('.color-swatch').forEach(sw => {
+    if (rgbToHex(sw.style.backgroundColor).toLowerCase() === activeColor.toLowerCase()) {
+      sw.classList.add('selected');
+    } else {
+      sw.classList.remove('selected');
+    }
+  });
+}
+
+function rgbToHex(rgb) {
+  if (rgb.startsWith('#')) return rgb;
+  const parts = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+  if (!parts) return rgb;
+  return '#' + [parts[1], parts[2], parts[3]].map(x => parseInt(x).toString(16).padStart(2, '0')).join('');
+}
+
+function setTool(tool) {
+  activeTool = tool;
+  document.getElementById('tool-draw').classList.toggle('active', tool === 'draw');
+  document.getElementById('tool-erase').classList.toggle('active', tool === 'erase');
+}
+
+function applyToolAction(slot) {
+  const isFilled = slot.classList.contains('filled');
+  if (activeTool === 'draw') {
+    const existingBead = slot.querySelector('.bead');
+    if (!isFilled) {
+      slot.classList.add('filled');
+      const bead = document.createElement('div');
+      bead.className = 'bead';
+      bead.style.backgroundColor = activeColor;
+      slot.appendChild(bead);
+    } else if (existingBead) {
+      existingBead.style.backgroundColor = activeColor;
+    }
+  } else if (activeTool === 'erase' && isFilled) {
+    slot.classList.remove('filled');
+    const bead = slot.querySelector('.bead');
+    if (bead) bead.remove();
+  }
+}
+
+function triggerSaveAndCropWorkflow() {
+  const slots = document.getElementById('pegboard').children;
+  
+  let minR = currentGridSize, maxR = -1;
+  let minC = currentGridSize, maxC = -1;
+  let hasContent = false;
+
+  for (let i = 0; i < slots.length; i++) {
+    if (slots[i].classList.contains('filled')) {
+      hasContent = true;
+      const r = Math.floor(i / currentGridSize);
+      const c = i % currentGridSize;
+      
+      if (r < minR) minR = r;
+      if (r > maxR) maxR = r;
+      if (c < minC) minC = c;
+      if (c > maxC) maxC = c;
+    }
+  }
+
+  if (!hasContent) {
+    openModal('收录失败', '面板上目前空空如也，请先开始绘制拼豆。', closeModal);
+    return;
+  }
+
+  const cropW = maxC - minC + 1;
+  const cropH = maxR - minR + 1;
+
+  const BEAD_SCALE = 24; 
+  const canvas = document.createElement('canvas');
+  canvas.width = cropW * BEAD_SCALE;
+  canvas.height = cropH * BEAD_SCALE;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  
+  for (let i = 0; i < slots.length; i++) {
+    if (slots[i].classList.contains('filled')) {
+      const r = Math.floor(i / currentGridSize);
+      const c = i % currentGridSize;
+      const bead = slots[i].querySelector('.bead');
+      
+      ctx.fillStyle = bead.style.backgroundColor;
+      ctx.fillRect((c - minC) * BEAD_SCALE, (r - minR) * BEAD_SCALE, BEAD_SCALE, BEAD_SCALE);
+    }
+  }
+  
+  const imgDataURL = canvas.toDataURL();
+  const timestamp = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+  
+  const newDesign = {
+    id: Date.now(),
+    name: `精细图纸卷 #${savedDesigns.length + 1}`,
+    time: timestamp,
+    image: imgDataURL,
+    likes: 0
+  };
+  
+  savedDesigns.push(newDesign);
+  saveToStorage();
+  renderGallery();
+  openModal('作品录入成功', '已自动隐藏空白格子并居中剪裁，可在右侧点选查看超清效果！', closeModal);
+}
+
+function handleLike(id) {
+  const item = savedDesigns.find(d => d.id === id);
+  if (item) {
+    item.likes++;
+    saveToStorage();
+    renderGallery();
+  }
+}
+
+function renderGallery() {
+  savedDesigns.sort((a, b) => b.likes - a.likes);
+  const list = document.getElementById('galleryList');
+  if (savedDesigns.length === 0) {
+    list.innerHTML = `<div style="text-align:center;color:#94a3b8;font-size:12px;margin-top:40px;">等待第一幅图纸保存</div>`;
+    return;
+  }
+  
+  list.innerHTML = savedDesigns.map((item, idx) => `
+    <div class="gallery-item">
+      <div class="rank-badge">${idx + 1}</div>
+      <img class="item-thumb" src="${item.image}" onclick="openLightbox('${item.image}', '${item.name}')" title="点击放大作品">
+      <div class="item-info">
+        <div class="item-name">${item.name}</div>
+        <div class="item-time">🕒 ${item.time}</div>
+      </div>
+      <div class="like-zone">
+        <button class="like-btn" onclick="handleLike(${item.id})">👍</button>
+        <div class="like-count">${item.likes}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openLightbox(imgSrc, title) {
+  document.getElementById('lightboxImg').src = imgSrc;
+  document.getElementById('lightboxTitle').textContent = `🔍 正在放大查看: ${title}`;
+  document.getElementById('lightboxOverlay').classList.add('show');
+}
+
+function closeLightbox() {
+  document.getElementById('lightboxOverlay').classList.remove('show');
+}
+
+function saveToStorage() {
+  localStorage.setItem('perler_beads_gallery_v3', JSON.stringify(savedDesigns));
+}
+
+function loadLeaderboard() {
+  const stored = localStorage.getItem('perler_beads_gallery_v3');
+  savedDesigns = stored ? JSON.parse(stored) : [];
+  renderGallery();
+}
+
+function handleSizeChange() {
+  const newSize = parseInt(document.getElementById('sizeSelector').value);
+  openModal('变更规格提示', '变更画布尺寸将清空当前正在设计的拼豆，确定继续吗？', () => {
+    currentGridSize = newSize;
+    // 重置漫游原点
+    panX = 0; panY = 0;
+    document.documentElement.style.setProperty('--pan-x', '0px');
+    document.documentElement.style.setProperty('--pan-y', '0px');
+    closeModal();
+    initStudio();
+  });
+}
+
+function askClearBoard() {
+  openModal('全盘清空确认', '确定要拔掉当前图纸板上所有的实体拼豆吗？该操作不可逆。', () => {
+    document.querySelectorAll('.slot').forEach(slot => {
+      slot.classList.remove('filled');
+      const bead = slot.querySelector('.bead');
+      if (bead) bead.remove();
+    });
+    closeModal();
+  });
+}
+
+function openModal(title, sub, onConfirm) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalSub').textContent = sub;
+  document.getElementById('modalConfirmBtn').onclick = onConfirm;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('show');
+  document.getElementById('sizeSelector').value = currentGridSize;
+}
+
+window.addEventListener('pointerup', () => { 
+  isDrawing = false; 
+  if (isPanning) {
+    isPanning = false;
+    document.getElementById('canvasZone').classList.remove('space-panning');
+  }
+});
+
+initStudio();
+</script>
+</body>
+</html>

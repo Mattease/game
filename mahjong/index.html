@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>麻将连连看 - 传统雕刻珍藏版</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #e9edf0; min-height: 100vh; overflow-x: hidden; }
+
+  #lobby { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 16px; }
+  .lobby-card { background: #fff; border-radius: 20px; padding: 2rem 1.5rem; box-shadow: 0 8px 40px rgba(0,0,0,0.08); max-width: 380px; width: 100%; text-align: center; }
+  .lobby-card h1 { font-size: 26px; font-weight: 700; margin-bottom: 6px; color: #2d2d2d; }
+  .lobby-card p { font-size: 14px; color: #888; margin-bottom: 1.5rem; line-height: 1.6; }
+  .name-row { display: flex; gap: 8px; margin-bottom: 1rem; }
+  .name-row input { flex: 1; padding: 10px 14px; border: 1.5px solid #e0e0e0; border-radius: 10px; font-size: 16px; outline: none; }
+  .name-row input:focus { border-color: #29b6f6; }
+  .player-list { list-style: none; margin-bottom: 1rem; text-align: left; }
+  .player-list li { background: #f4f6f8; border-radius: 8px; padding: 8px 12px; margin-bottom: 6px; font-size: 14px; display: flex; align-items: center; justify-content: space-between; color: #444; }
+  .player-li-left { display: flex; align-items: center; gap: 8px; }
+  .player-dot { width: 8px; height: 8px; border-radius: 50%; background: #29b6f6; flex-shrink: 0; }
+  .remove-btn { background: none; border: none; color: #ccc; font-size: 18px; cursor: pointer; line-height: 1; }
+  .remove-btn:hover { color: #ff6b6b; }
+  .btn { border: none; border-radius: 10px; padding: 11px 20px; font-size: 15px; cursor: pointer; font-weight: 600; transition: transform .1s; }
+  .btn:active { transform: scale(0.95); }
+  .btn-primary { background: #29b6f6; color: #fff; width: 100%; margin-bottom: 8px; }
+  .btn-danger { background: #fff0f0; color: #ff6b6b; width: 100%; margin-bottom: 4px; }
+  .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 8px; }
+  .btn-secondary { background: #e1f5fe; color: #0288d1; }
+  .hint-text { font-size: 12px; color: #bbb; margin-top: 10px; line-height: 1.5; }
+
+  #game { display: none; padding: 10px; width: 100%; }
+  .game-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 6px; flex-wrap: wrap; }
+  .game-title { font-size: 16px; font-weight: 700; color: #2d2d2d; flex-shrink: 0; }
+  .game-actions { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .timer-badge { background: #fff; border: 1.5px solid #e0e0e0; border-radius: 20px; padding: 3px 10px; font-size: 13px; font-weight: 600; color: #444; }
+  .timer-badge.urgent { border-color: #ff6b6b; color: #ff6b6b; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.6} }
+
+  .scoreboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px,1fr)); gap: 6px; margin-bottom: 12px; }
+  .score-card { background: #fff; border-radius: 10px; padding: 6px 8px; text-align: center; border: 1.5px solid #e8e8e8; }
+  .score-card.active { border-color: #29b6f6; background: #e1f5fe; }
+  .score-name { font-size: 11px; color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .score-card.active .score-name { color: #0288d1; font-weight: 600; }
+  .score-val { font-size: 18px; font-weight: 700; color: #2d2d2d; }
+  .score-turn { font-size: 9px; color: #29b6f6; height: 12px; }
+
+  .status-bar { background: #fff; border-radius: 8px; padding: 6px 12px; font-size: 12px; color: #666; margin-bottom: 16px; text-align: center; font-weight: 500; }
+
+  .board-wrap { position: relative; width: 100%; overflow: hidden; padding-bottom: 15px; }
+  .board { display: grid; width: fit-content; margin: 0 auto; }
+
+  /* 仿照大牌照片完美还原的高级实体麻将外壳 */
+  .tile {
+    display: flex; 
+    align-items: center; 
+    justify-content: center;
+    cursor: pointer; 
+    position: relative; 
+    user-select: none;
+    background: #fdfcf7;
+    border-radius: 5px;
+    box-shadow: 
+      inset 0 1px 1px rgba(255,255,255,0.9),
+      inset 0 -1px 2px rgba(0,0,0,0.05),
+      0 1px 0 #dedad1,
+      0 2px 0 #ccc8be,
+      0 3px 0 #bbb6ab,
+      0 4px 0 #aaa59a,
+      0 4px 1px rgba(27, 94, 32, 0.3),  
+      0 5px 0 #1b5e20,                  /* 传统墨绿色民用竹骨牌背 */
+      0 8px 10px rgba(0,0,0,0.15);       
+    transition: transform .1s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow .1s ease, opacity .3s ease;
+  }
+  
+  /* 优化：收窄骨牌卡槽内衬边缘，给中间的艺术矢量留出更大舒展空间 */
+  .tile::before {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px; right: 2px; bottom: 3px;
+    border: 1px solid rgba(0,0,0,0.03);
+    background: #fbfaf4;
+    border-radius: 3px;
+    box-shadow: inset 1px 1px 1.5px rgba(0,0,0,0.05);
+    z-index: 1;
+  }
+
+  /* 优化：全幅充满容器，确保大图占比 */
+  .tile-content {
+    position: absolute;
+    top: 2px; left: 2px; right: 2px; bottom: 5px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  
+  .tile:active:not(.matched) { 
+    transform: translateY(3px);
+    box-shadow: 
+      0 1px 0 #bbb6ab,
+      0 2px 0 #aaa59a,
+      0 2px 1px rgba(27, 94, 32, 0.3),
+      0 3px 0 #1b5e20,
+      0 4px 5px rgba(0,0,0,0.15);
+  }
+  
+  .tile.selected { 
+    transform: translateY(-8px);
+    background: #f1f9ff;
+    box-shadow: 
+      0 1px 0 #b3e5fc,
+      0 2px 0 #81d4fa,
+      0 3px 0 #4fc3f7,
+      0 4px 0 #29b6f6,
+      0 4px 2px rgba(2, 136, 209, 0.3),
+      0 6px 0 #0277bd,
+      0 12px 22px rgba(41, 182, 246, 0.5);
+  }
+  
+  .tile.selected::before {
+    background: #eef8ff;
+    box-shadow: inset 1px 1px 2px rgba(41, 182, 246, 0.15);
+  }
+
+  .tile.matched { 
+    opacity: 0; 
+    pointer-events: none; 
+    transform: scale(0.8);
+    transition: opacity .2s, transform .2s; 
+  }
+  
+  .tile.hint { animation: hintBlink .4s 3; }
+  @keyframes hintBlink { 
+    0%,100%{ filter: drop-shadow(0 0 0 transparent); }
+    50%{ filter: drop-shadow(0 0 12px #ffaa00); transform: translateY(-2px); } 
+  }
+  
+  .path-canvas { position: absolute; top:0; left:0; pointer-events:none; z-index:10; }
+
+  .overlay { position: fixed; top:0; left:0; right:0; bottom:0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index:100; padding:16px; }
+  .result-card { background:#fff; border-radius:20px; padding:1.5rem; max-width:320px; width:100%; text-align:center; box-shadow:0 16px 60px rgba(0,0,0,0.2); }
+  .result-emoji { font-size:48px; margin-bottom:10px; }
+  .result-title { font-size:20px; font-weight:700; color:#2d2d2d; margin-bottom:6px; }
+  .result-sub { font-size:13px; color:#888; margin-bottom:1rem; line-height:1.6; }
+  .result-scores { list-style:none; margin-bottom:1rem; text-align:left; }
+  .result-scores li { display:flex; justify-content:space-between; padding:7px 12px; background:#f4f6f8; border-radius:8px; margin-bottom:5px; font-size:14px; color:#444; }
+  .result-scores li.winner { background:#e1f5fe; font-weight:700; color:#0288d1; }
+  .result-btn-row { display:flex; gap:8px; }
+  .result-btn-row .btn { flex:1; }
+</style>
+</head>
+<body>
+
+<div id="lobby">
+  <div class="lobby-card">
+    <h1>🀄 麻将连连看</h1>
+    <p>多人共享牌面，轮流消除，限时180秒，分数最高的人赢！</p>
+    <div class="name-row">
+      <input id="nameInput" placeholder="输入你的名字" maxlength="8"/>
+      <button class="btn btn-secondary btn-sm" onclick="joinGame()">加入</button>
+    </div>
+    <ul class="player-list" id="playerList"></ul>
+    <button class="btn btn-primary" id="startBtn" onclick="startGame()" style="display:none">开始游戏</button>
+    <button class="btn btn-danger btn-sm" id="clearBtn" onclick="clearPlayers()" style="display:none;font-size:13px;padding:7px">清空重来</button>
+    <p class="hint-text">最多4人 · 把链接发给朋友各自打开</p>
+  </div>
+</div>
+
+<div id="game">
+  <div class="game-header">
+    <span class="game-title">🀄 麻将连连看</span>
+    <div class="game-actions">
+      <span class="timer-badge" id="timerBadge">⏱ <span id="timerVal">180</span>s</span>
+      <button class="btn btn-secondary btn-sm" onclick="hintTile()">提示</button>
+      <button class="btn btn-secondary btn-sm" onclick="shuffleBoard()">洗牌</button>
+      <button class="btn btn-secondary btn-sm" onclick="resetGame()">重开</button>
+      <button class="btn btn-sm" style="background:#fff0f0;color:#ff6b6b" onclick="confirmQuit()">结束</button>
+    </div>
+  </div>
+  <div class="scoreboard" id="scoreboard"></div>
+  <div class="status-bar" id="status">选一张牌开始！</div>
+  <div class="board-wrap" id="boardWrap">
+    <canvas class="path-canvas" id="pathCanvas"></canvas>
+    <div class="board" id="board"></div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="result-card">
+    <div class="result-emoji" id="resultEmoji">🎉</div>
+    <div class="result-title" id="resultTitle">游戏结束！</div>
+    <div class="result-sub" id="resultSub"></div>
+    <ul class="result-scores" id="resultScores"></ul>
+    <div class="result-btn-row" id="overlayBtns"></div>
+  </div>
+</div>
+
+<script>
+const TILE_TYPES = [];
+['wan','bing','tiao'].forEach(type => {
+  for (let n = 1; n <= 9; n++) TILE_TYPES.push({type, num: n, id: TILE_TYPES.length});
+});
+
+const COLS=9, ROWS=8; 
+let grid=[], selected=null, players=[], currentPlayer=0, timerInterval=null, timeLeft=180;
+let tileW=42, tileH=54, tileGap=7; 
+
+function calcTileSize() {
+  const available = window.innerWidth - 20;
+  const maxW = Math.floor((available - (COLS * tileGap)) / COLS);
+  tileW = Math.min(46, Math.max(32, maxW));
+  tileH = Math.round(tileW * 1.35);
+}
+
+/* 重构核心：使用全新 80x108 比例视口，将图案视觉覆盖面积全面拉满至 75% 以上 */
+function getTileFaceSVG(type, num, w, h) {
+  const cRed = '#b31217';  
+  const cBlue = '#113875'; 
+  const cGreen = '#0a5c36';
+  
+  let content = '';
+
+  // 1. 繁体万字：重调中轴线坐标，字符膨胀变大
+  if (type === 'wan') {
+    const words = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+    const numColor = (num === 1 || num === 5 || num === 9) ? cRed : cBlue;
+    content = `
+      <text x="40" y="38" dominant-baseline="middle" text-anchor="middle" font-family="'SimSun','STSong','Songti SC',serif" font-weight="900" font-size="38" fill="${numColor}">${words[num]}</text>
+      <text x="40" y="78" dominant-baseline="middle" text-anchor="middle" font-family="'SimSun','STSong','Songti SC',serif" font-weight="900" font-size="38" fill="${cRed}">萬</text>
+    `;
+  }
+  
+  // 2. 传统同心饼：外延网格分布，彻底消除四周空隙
+  else if (type === 'bing') {
+    const makeDot = (cx, cy, r, color) => `
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}" stroke="rgba(0,0,0,0.12)" stroke-width="0.5" />
+      <circle cx="${cx}" cy="${cy}" r="${r * 0.6}" fill="#fff" opacity="0.35" />
+      <circle cx="${cx}" cy="${cy}" r="${r * 0.25}" fill="${color}" />
+    `;
+    
+    if (num === 1) {
+      let rays = '';
+      for (let a = 0; a < 360; a += 20) {
+        let rad = a * Math.PI / 180;
+        let x2 = 40 + Math.cos(rad) * 31;
+        let y2 = 54 + Math.sin(rad) * 31;
+        rays += `<line x1="40" y1="54" x2="${x2}" y2="${y2}" stroke="${cGreen}" stroke-width="1.8" />`;
+      }
+      content = `
+        <circle cx="40" cy="54" r="35" fill="none" stroke="${cBlue}" stroke-width="2.5" />
+        <circle cx="40" cy="54" r="30" fill="none" stroke="${cRed}" stroke-width="1.5" stroke-dasharray="3 2" />
+        ${rays}
+        <circle cx="40" cy="54" r="14" fill="${cRed}" />
+        <circle cx="40" cy="54" r="4" fill="#fff" />
+      `;
+    } else {
+      const layouts = {
+        2: [[40,30,cBlue], [40,78,cGreen]],
+        3: [[20,26,cBlue], [40,54,cRed], [60,82,cGreen]],
+        4: [[22,30,cBlue], [58,30,cRed], [22,78,cRed], [58,78,cBlue]],
+        5: [[22,26,cBlue], [58,26,cGreen], [40,54,cRed], [22,82,cGreen], [58,82,cBlue]],
+        6: [[24,28,cBlue], [56,28,cBlue], [24,54,cRed], [56,54,cRed], [24,80,cRed], [56,80,cRed]],
+        7: [[20,22,cBlue], [40,28,cBlue], [60,34,cBlue], [24,60,cRed], [56,60,cRed], [24,86,cRed], [56,86,cRed]],
+        8: [[15, 22, cGreen], [32, 22, cGreen], [49, 22, cRed], [66, 22, cRed], [15, 58, cBlue], [32, 58, cBlue], [49, 58, cGreen], [66, 58, cGreen]],
+        9: [[22,24,cBlue], [40,24,cBlue], [58,24,cBlue], [22,54,cRed], [40,54,cRed], [58,54,cRed], [22,84,cGreen], [40,84,cGreen], [58,84,cGreen]]
+      };
+      let r = num === 2 ? 14 : num <= 5 ? 12 : 9.5;
+      layouts[num].forEach(pt => { content += makeDot(pt[0], pt[1], r, pt[2]); });
+    }
+  }
+  
+  // 3. 骨雕条子：加粗加长竹节比例，大幅度铺满界面
+  else if (type === 'tiao') {
+    const makeStick = (x, y, sw, sh, color) => `
+      <rect x="${x}" y="${y}" width="${sw}" height="${sh}" rx="3" fill="${color}" stroke="rgba(0,0,0,0.1)" stroke-width="0.5" />
+      <line x1="${x + sw/2}" y1="${y + 2}" x2="${x + sw/2}" y2="${y + sh - 2}" stroke="#fff" stroke-width="1" stroke-dasharray="1 1" opacity="0.6" />
+      <circle cx="${x + sw/2}" cy="${y + sh/2}" r="1.5" fill="#fff" />
+    `;
+    
+    if (num === 1) {
+      content = `
+        <g transform="translate(-2, 7) scale(1.12)">
+          <path d="M42,25 C35,28 36,40 42,48 C35,55 38,72 52,75 C65,72 68,55 60,48 C66,40 67,28 60,25 Z" fill="${cGreen}" />
+          <path d="M46,45 Q50,30 54,45 Z" fill="${cRed}" />
+          <path d="M40,70 L25,82 L35,76 Z" fill="${cBlue}" />
+          <path d="M60,70 L75,82 L65,76 Z" fill="${cBlue}" />
+          <circle cx="46" cy="34" r="1.5" fill="#fff" />
+          <circle cx="54" cy="34" r="1.5" fill="#fff" />
+          <line x1="46" y1="74" x2="44" y2="86" stroke="${cRed}" stroke-width="1.5" />
+          <line x1="54" y1="74" x2="56" y2="86" stroke="${cRed}" stroke-width="1.5" />
+        </g>
+      `;
+    } else {
+      const wS = 9, hS = 27; /* 加粗增高 */
+      const tL = {
+        2: [[40, 22, cGreen], [40, 58, cGreen]],
+        3: [[40, 18, cGreen], [22, 56, cGreen], [58, 56, cGreen]],
+        4: [[24, 22, cGreen], [56, 22, cRed], [24, 58, cRed], [56, 58, cGreen]],
+        5: [[22, 22, cGreen], [58, 22, cBlue], [40, 41, cRed], [22, 60, cBlue], [58, 60, cGreen]],
+        6: [[22, 22, cGreen], [40, 22, cGreen], [58, 22, cGreen], [22, 58, cRed], [40, 58, cRed], [58, 58, cRed]],
+        7: [[40, 14, cRed], [20, 44, cGreen], [40, 44, cGreen], [60, 44, cGreen], [20, 74, cBlue], [40, 74, cBlue], [60, 74, cBlue]],
+        9: [[22, 16, cRed], [40, 16, cRed], [58, 16, cRed], [22, 45, cBlue], [40, 45, cBlue], [58, 45, cBlue], [22, 74, cGreen], [40, 74, cGreen], [58, 74, cGreen]]
+      };
+      
+      if (num === 8) {
+        const layout8 = [[15, 22, cGreen], [32, 22, cGreen], [49, 22, cRed], [66, 22, cRed], [15, 58, cBlue], [32, 58, cBlue], [49, 58, cGreen], [66, 58, cGreen]];
+        layout8.forEach(st => { content += makeStick(st[0], st[1], wS, hS, st[2]); });
+      } else {
+        tL[num].forEach(st => { content += makeStick(st[0] - wS/2, st[1], wS, hS, st[2]); });
+      }
+    }
+  }
+
+  /* 核心修复：重置视口为符合长方形物理纸牌的 80x108 黄金比例，完全消灭侧边空隙 */
+  return `
+    <svg width="100%" height="100%" viewBox="0 0 80 108" version="1.1" xmlns="http://www.w3.org/2000/svg">
+      ${content}
+    </svg>
+  `;
+}
+
+function joinGame() {
+  const n = document.getElementById('nameInput').value.trim();
+  if (!n || players.find(p=>p.name===n)) return;
+  if (players.length >= 4) { alert('最多4人哦'); return; }
+  players.push({name:n, score:0});
+  renderLobby();
+  document.getElementById('nameInput').value = '';
+}
+
+function removePlayer(i) { players.splice(i,1); renderLobby(); }
+function clearPlayers() { players=[]; renderLobby(); }
+
+function renderLobby() {
+  document.getElementById('playerList').innerHTML = players.map((p,i)=>`
+    <li><div class="player-li-left"><span class="player-dot"></span>${p.name}</div>
+    <button class="remove-btn" onclick="removePlayer(${i})">×</button></li>`).join('');
+  const has = players.length >= 1;
+  document.getElementById('startBtn').style.display = has?'block':'none';
+  document.getElementById('clearBtn').style.display = has?'block':'none';
+}
+
+function startGame() {
+  document.getElementById('lobby').style.display='none';
+  document.getElementById('game').style.display='block';
+  calcTileSize(); initBoard(); renderScoreboard(); startTimer();
+}
+
+function initBoard() {
+  const total = COLS * ROWS; 
+  const pool = [];
+  for (let i = 0; i < total/2; i++) {
+    const t = TILE_TYPES[i % TILE_TYPES.length];
+    pool.push({...t}, {...t});
+  }
+  for (let i=pool.length-1;i>0;i--) {
+    const j=Math.floor(Math.random()*(i+1));
+    [pool[i],pool[j]]=[pool[j],pool[i]];
+  }
+  grid=[];
+  for (let r=0;r<ROWS;r++) {
+    grid.push([]);
+    for (let c=0;c<COLS;c++) {
+      const t=pool[r*COLS+c];
+      grid[r].push({...t, row:r, col:c, matched:false});
+    }
+  }
+  selected=null; renderBoard();
+}
+
+function renderBoard() {
+  const board = document.getElementById('board');
+  board.style.gridTemplateColumns=`repeat(${COLS},${tileW}px)`;
+  board.style.gap=`${tileGap}px`;
+  board.style.padding = '16px 6px 26px 6px'; 
+  board.innerHTML='';
+  for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++) {
+    const tile=grid[r][c];
+    const d=document.createElement('div');
+    let cls='tile';
+    if(tile.matched) cls+=' matched';
+    if(selected&&selected.row===r&&selected.col===c) cls+=' selected';
+    d.className=cls;
+    d.style.cssText=`width:${tileW}px;height:${tileH}px;`;
+    
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tile-content';
+    wrapper.innerHTML = getTileFaceSVG(tile.type, tile.num, tileW, tileH);
+    d.appendChild(wrapper);
+    
+    if(!tile.matched) d.onclick=()=>clickTile(tile);
+    board.appendChild(d);
+  }
+  resizeCanvas();
+}
+
+function resizeCanvas() {
+  const wrap=document.getElementById('boardWrap');
+  const c=document.getElementById('pathCanvas');
+  setTimeout(()=>{c.width=wrap.scrollWidth;c.height=wrap.scrollHeight;},50);
+}
+
+function clickTile(tile) {
+  if(tile.matched) return;
+  if(!selected){
+    selected=tile; renderBoard();
+    setStatus(`已选 ${tile.num}${tile.type==='wan'?'万':tile.type==='bing'?'饼':'条'}`);
+    return;
+  }
+  if(selected.row===tile.row&&selected.col===tile.col){
+    selected=null; renderBoard(); setStatus('已取消'); return;
+  }
+  if(selected.id!==tile.id){
+    setStatus('牌面不一致'); selected=tile; renderBoard(); return;
+  }
+  const path=findPath(selected,tile);
+  if(!path){
+    setStatus('路线不通'); selected=tile; renderBoard(); return;
+  }
+  drawPath(path);
+  selected.matched=true; tile.matched=true;
+  players[currentPlayer].score+=10;
+  const scorer=players[currentPlayer].name;
+  selected=null; renderBoard();
+  currentPlayer=(currentPlayer+1)%players.length;
+  renderScoreboard();
+  setStatus(`${scorer} 得分！轮到 ${players[currentPlayer].name}`);
+  setTimeout(()=>clearPath(),400);
+  if(grid.flat().every(t=>t.matched)) endGame(true);
+}
+
+function isEmpty(r,c) {
+  if(r<0||r>=ROWS||c<0||c>=COLS) return true;
+  return grid[r][c].matched;
+}
+function canConnect(a,b) {
+  if(a.row===b.row){
+    const mn=Math.min(a.col,b.col),mx=Math.max(a.col,b.col);
+    for(let c=mn+1;c<mx;c++) if(!isEmpty(a.row,c)) return false;
+    return true;
+  }
+  if(a.col===b.col){
+    const mn=Math.min(a.row,b.row),mx=Math.max(a.row,b.row);
+    for(let r=mn+1;r<mx;r++) if(!isEmpty(r,a.col)) return false;
+    return true;
+  }
+  return false;
+}
+function findPath(a,b) {
+  if(canConnect(a,b)) return [a,b];
+  for(let c=-1;c<=COLS;c++){
+    if(!isEmpty(a.row,c)&&c!==a.col) continue;
+    if(!isEmpty(b.row,c)&&c!==b.col) continue;
+    const m1={row:a.row,col:c},m2={row:b.row,col:c};
+    if(canConnect(a,m1)&&canConnect(m1,m2)&&canConnect(m2,b)) return [a,m1,m2,b];
+  }
+  for(let r=-1;r<=ROWS;r++){
+    if(!isEmpty(r,a.col)&&r!==a.row) continue;
+    if(!isEmpty(r,b.col)&&r!==b.row) continue;
+    const m1={row:r,col:a.col},m2={row:r,col:b.col};
+    if(canConnect(a,m1)&&canConnect(m1,m2)&&canConnect(m2,b)) return [a,m1,m2,b];
+  }
+  return null;
+}
+
+function tileCenter(r,c) {
+  const board=document.getElementById('board');
+  const bRect=board.getBoundingClientRect();
+  const wRect=document.getElementById('boardWrap').getBoundingClientRect();
+  const scroll=document.getElementById('boardWrap');
+  return {
+    x:(c*(tileW+tileGap)+tileW/2)+4+(bRect.left-wRect.left)+scroll.scrollLeft,
+    y:(r*(tileH+tileGap)+tileH/2)+16+(bRect.top-wRect.top)+scroll.scrollTop
+  };
+}
+function drawPath(path) {
+  const c=document.getElementById('pathCanvas');
+  const ctx=c.getContext('2d');
+  ctx.clearRect(0,0,c.width,c.height);
+  ctx.strokeStyle='#0288d1';ctx.lineWidth=4;ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.beginPath();
+  path.forEach((node,i)=>{
+    const{x,y}=tileCenter(node.row,node.col);
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+}
+function clearPath(){
+  const c=document.getElementById('pathCanvas');
+  c.getContext('2d').clearRect(0,0,c.width,c.height);
+}
+
+function hintTile() {
+  const tiles=grid.flat().filter(t=>!t.matched);
+  for(let i=0;i<tiles.length;i++) for(let j=i+1;j<tiles.length;j++){
+    if(tiles[i].id===tiles[j].id&&findPath(tiles[i],tiles[j])){
+      setStatus(`提示：有可消除的牌面！`);
+      const els=document.getElementById('board').querySelectorAll('.tile');
+      [tiles[i],tiles[j]].forEach(t=>{
+        const el=els[t.row*COLS+t.col];
+        if(el){el.classList.add('hint');setTimeout(()=>el.classList.remove('hint'),1500);}
+      });
+      return;
+    }
+  }
+  setStatus('无对子可选，请点击洗牌');
+}
+
+function shuffleBoard() {
+  const rem=grid.flat().filter(t=>!t.matched);
+  for(let i=rem.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [rem[i].type,rem[j].type]=[rem[j].type,rem[i].type];
+    [rem[i].num,rem[j].num]=[rem[j].num,rem[i].num];
+    [rem[i].id,rem[j].id]=[rem[j].id,rem[i].id];
+  }
+  selected=null; renderBoard(); setStatus('已洗牌');
+}
+
+/* 核心重构：弃用环境不兼容的 confirm()，改用全覆盖安全的自定义 Overlay 弹窗确认机制 */
+function confirmQuit() {
+  document.getElementById('resultEmoji').textContent='🤔';
+  document.getElementById('resultTitle').textContent='确定结束游戏吗？';
+  document.getElementById('resultSub').textContent='结束将清空当前分数并回到主界面。';
+  document.getElementById('resultScores').innerHTML='';
+  document.getElementById('overlayBtns').innerHTML = `
+    <button class="btn btn-danger" style="background:#ff6b6b;color:#fff" onclick="backToLobby()">确定结束</button>
+    <button class="btn btn-secondary" onclick="closeOverlay()">继续游戏</button>
+  `;
+  document.getElementById('overlay').style.display='flex';
+}
+
+function closeOverlay() {
+  document.getElementById('overlay').style.display='none';
+}
+
+function renderScoreboard() {
+  document.getElementById('scoreboard').innerHTML=players.map((p,i)=>`
+    <div class="score-card${i===currentPlayer?' active':''}">
+      <div class="score-name">${p.name}</div>
+      <div class="score-val">${p.score}</div>
+      <div class="score-turn">${i===currentPlayer?'👆 轮到你':''}</div>
+    </div>`).join('');
+}
+function setStatus(msg){document.getElementById('status').textContent=msg;}
+
+function startTimer(){
+  timeLeft=180;
+  document.getElementById('timerVal').textContent=timeLeft;
+  clearInterval(timerInterval);
+  timerInterval=setInterval(()=>{
+    timeLeft--;
+    document.getElementById('timerVal').textContent=timeLeft;
+    const badge=document.getElementById('timerBadge');
+    if(timeLeft<=30) badge.classList.add('urgent'); else badge.classList.remove('urgent');
+    if(timeLeft<=0){clearInterval(timerInterval);endGame(false);}
+  },1000);
+}
+
+function endGame(win){
+  clearInterval(timerInterval);
+  const sorted=[...players].sort((a,b)=>b.score-a.score);
+  const winner=sorted[0] || {name: '无', score: 0};
+  document.getElementById('resultEmoji').textContent=win?'🎉':'⏰';
+  document.getElementById('resultTitle').textContent=win?'全部消完！':'时间到！';
+  document.getElementById('resultSub').textContent=win
+    ? `恭喜 ${winner.name} 胜出！`
+    : `时间结束！${winner.name} 胜出！`;
+  document.getElementById('resultScores').innerHTML=sorted.map((p,i)=>
+    `<li class="${i===0?'winner':''}"><span>${i===0?'🥇':i===1?'🥈':'🥉'} ${p.name}</span><span>${p.score}分</span></li>`
+  ).join('');
+  document.getElementById('overlayBtns').innerHTML = `
+    <button class="btn btn-primary" onclick="resetGame()">再来一局</button>
+    <button class="btn btn-secondary" onclick="backToLobby()">回主界面</button>
+  `;
+  document.getElementById('overlay').style.display='flex';
+}
+
+function resetGame(){
+  closeOverlay();
+  clearInterval(timerInterval);
+  players.forEach(p=>p.score=0);
+  currentPlayer=0; calcTileSize(); initBoard(); renderScoreboard(); startTimer();
+  setStatus('游戏开始');
+}
+
+function backToLobby(){
+  closeOverlay();
+  document.getElementById('game').style.display='none';
+  document.getElementById('lobby').style.display='flex';
+  players=[]; currentPlayer=0; clearInterval(timerInterval); renderLobby();
+}
+
+window.addEventListener('resize',()=>{
+  if(document.getElementById('game').style.display!=='none'){
+    calcTileSize(); renderBoard();
+  }
+});
+document.getElementById('nameInput').addEventListener('keydown',e=>{if(e.key==='Enter')joinGame();});
+</script>
+</body>
+</html>
